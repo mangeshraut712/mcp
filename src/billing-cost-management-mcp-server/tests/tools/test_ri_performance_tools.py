@@ -482,7 +482,7 @@ class TestGetReservationCoverage:
             PAGINATION_COMPLETE,
         )
 
-        mock_metrics = ['CoverageHours', 'CoverageCost']
+        mock_metrics = ['Hour', 'Cost']
         mock_group_by = [{'Type': 'DIMENSION', 'Key': 'INSTANCE_TYPE'}]
         mock_filter = {
             'Dimensions': {'Key': 'SERVICE', 'Values': ['Amazon Elastic Compute Cloud - Compute']}
@@ -766,7 +766,7 @@ class TestRIPerformance:
     async def test_ri_performance_with_all_params(self, mock_context):
         """Test ri_performance with all parameters."""
         # Setup
-        metrics = '["CoverageHours", "CoverageCost"]'
+        metrics = '["Hour", "Cost"]'
         group_by = '[{"Type": "DIMENSION", "Key": "INSTANCE_TYPE"}]'
         filter_expr = '{"Dimensions": {"Key": "SERVICE", "Values": ["Amazon Elastic Compute Cloud - Compute"]}}'
         sort_by = '{"Key": "CoverageHoursPercentage", "SortOrder": "DESCENDING"}'
@@ -1182,6 +1182,21 @@ async def test_description_states_subscription_id_format_and_error():
 
 
 @pytest.mark.asyncio
+async def test_metrics_arg_lists_the_values_cost_explorer_accepts():
+    """GetReservationCoverage takes Hour, Unit and Cost; other names are a ValidationException."""
+    tool = await ri_performance_server.get_tool('ri-performance')
+    assert tool is not None
+    metrics_doc = tool.parameters['properties']['metrics']['description']
+    assert '["Hour", "Cost"]' in metrics_doc
+    assert 'Valid values are Hour, Unit and Cost; Unit is EC2 only' in metrics_doc
+    # Without Metrics, Cost Explorer returns only CoverageHours.
+    assert 'Defaults to Hour only' in metrics_doc
+    assert 'Defaults to all metrics' not in metrics_doc
+    for wrong in ('HoursCoverage', 'CostCoverage', 'CoverageHours', 'CoverageCost'):
+        assert wrong not in metrics_doc
+
+
+@pytest.mark.asyncio
 async def test_ungrouped_utilization_ignores_max_items_and_next_token(mock_context):
     """GetReservationUtilization rejects any token without GroupBy, so none is sent."""
     client = MagicMock()
@@ -1340,3 +1355,13 @@ class TestMaxPages:
         description = tool.description or ''
         assert 'get_reservation_utilization takes max_pages (pages of 500 groups)' in description
         assert 'rounded up' not in description
+
+
+@pytest.mark.asyncio
+async def test_description_states_utilization_data_lag():
+    """Recent-day utilization windows return an empty-message DataUnavailableException."""
+    description = ' '.join((await _ri_description()).split())
+    assert 'utilization data for the most recent 2-3 days (counting today)' in description
+    assert 'which the service sends without a message' in description
+    assert 'not a failure and not zero utilization' in description
+    assert 'do not resend the identical request' in description
